@@ -1,0 +1,295 @@
+---
+title: "Defoliation and carbone balance"
+author: "Денис Демидко"
+date: "2023-11-16"
+output: word_document
+bibliography: references.bib
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(include = FALSE)
+```
+
+```{r clear_env}
+rm(list=ls())
+```
+
+```{r libraries}
+library(minpack.lm)
+library(nls2)
+library(ggplot2)
+```
+
+```{r set_wd}
+setwd('C:/Users/user/YandexDisk/Важные документы/Исходные данные для статей/Слинкиной/')
+```
+
+Данные из Усольцева
+
+```{r read_data, include=TRUE}
+raw <- read.csv('Масса хвои.csv', row.names = 1)[, 1:5]
+```
+
+Абсолютно сухая масса хвои пихтарников разных бонитетов (т/га). Данные из: Усольцев, Антропов,
+
+```{r input_data, include=TRUE}
+ua <- vector(mode='list', length=5)
+
+ua[[1]] <- data.frame(
+  age = seq(20, 120, 10), 
+  mass = c(1.6, 4.7, 7, 9.6, 9.6, 12, 11.8, 11.7, 11.4, 11, 10),
+  volume = c(67, 129, 174, 246, 319, 377, 431, 485, 529, 572, 593)
+  )
+ua[[2]] <- data.frame(
+  age=seq(20, 120, 10), 
+  mass=c(1.4, 2.8, 5.9, 8.4, 10, 10.8, 10.7, 10.1, 9.6, 9.1, 8.5),
+  volume = c(54, 80, 136, 192, 248, 300, 342, 381, 419, 449, 471)
+  )
+ua[[3]] <- data.frame(
+  age=seq(20, 120, 10), 
+  mass=c(1.1, 2.6, 4.7, 6.8, 7.9, 8.4, 8.2, 7.9, 7.4, 7, 6.3),
+  volume = c(43, 66, 104, 143, 185, 224, 256, 288, 317, 342, 355)
+  )
+ua[[4]] <- data.frame(
+  age=seq(20, 120, 10), 
+  mass=c(.8, 1.8, 3.3, 4.9, 6.1, 7, 7, 6.9, 7.1, 6.1, 5.5),
+  volume = c(32, 49, 74, 105, 137, 175, 205, 229, 248, 266, 276)
+  )
+ua[[5]] <- data.frame(
+  age=seq(30, 120, 10), 
+  mass=c(1.2, 2, 2.9, 3.7, 4.1, 4.1, 4.1, 3.8, 3.5, 3.2),
+  volume = c(35, 50, 69, 89, 106, 122, 139, 151, 161, 170)
+  )
+```
+
+Расчёт стартовых коэффициентов для модели с помощью брутфорса [@nls2].
+
+```{r brutforce_nls_age_vol, include=TRUE, echo=FALSE}
+tmp <- nls2(
+  mass ~ i + a*age + b*age^d, 
+  start=data.frame(
+    i=c(-10, 10),
+    a=c(-10, 10), 
+    b=c(-10, 10), 
+    d=c(-5, 5)
+  ), 
+  data=ua[[1]], 
+  algorithm = 'brute-force'
+)
+print(coefficients(tmp))
+cat(' ', fill=T)
+
+tmp <- nls2(
+  volume ~ i + a*age + b*age^d, 
+  start=data.frame(
+    i=c(-100, 10),
+    a=c(-10, 100), 
+    b=c(-100, 10), 
+    d=c(-50, 50)
+    ), 
+  data=ua[[1]], 
+  algorithm = 'brute-force'
+  )
+print(coefficients(tmp))
+rm(tmp)
+```
+
+Расчёт работающих моделей с помощью `nlsLM` [@minpack.lm]. Графики иллюстрируют качество подгонки модели к исходным данным (Усольцев, Антропов).
+
+```{r models_age_vol, include=TRUE, echo=FALSE, warning = FALSE, message = FALSE}
+models_needles <- vector(mode='list', length=5)
+
+for(i in 1:length(ua)){
+  models_needles[[i]] <- nlsLM(
+    mass ~ i + a*age + b*age^d, 
+    data = ua[[i]], 
+    start=list(i=10, a=0, b=-10, d=-5)
+  )
+  if(i != 5) {
+    tmp <- data.frame(
+      ind = seq(20, 120, 10), 
+      table = ua[[i]]$mass, 
+      predicted = predict(models_needles[[i]])
+    )
+  } else {
+    tmp <- data.frame(
+      ind = seq(30, 120, 10), 
+      table = ua[[i]]$mass, 
+      predicted = predict(models_needles[[i]])
+    )
+  }
+  plot_tmp <- ggplot(tmp, aes(x=ind, y=table)) + 
+    geom_point() + 
+    geom_point(aes(x=ind, y=predicted), colour='red') + 
+    labs(title=paste('Хвоя, бонитет', i)) +
+    xlab('Возраст') + 
+    ylab('Масса хвои') + 
+    theme_bw()
+  print(plot_tmp)
+}
+rm(i)
+
+models_volume <- vector(mode='list', length=5)
+
+for(i in 1:length(ua)) {
+  models_volume[[i]] <- nlsLM(
+    volume ~ i + a*age + b*age^d, 
+    data = ua[[i]], 
+    start=list(i=10, a=-10, b=10, d=0)
+    )
+  if(i != 5) {
+    tmp <- data.frame(
+      ind = seq(20, 120, 10), 
+      table = ua[[i]]$volume, 
+      predicted = predict(models_volume[[i]])
+    )
+  } else {
+    tmp <- data.frame(
+      ind = seq(30, 120, 10), 
+      table = ua[[i]]$volume, 
+      predicted = predict(models_volume[[i]])
+    )
+  }
+  plot_tmp <- ggplot(tmp, aes(x=ind, y=table)) + 
+    geom_point() + 
+    geom_point(aes(x=ind, y=predicted), colour='red') + 
+    labs(title=paste('Объёмы стволов, бонитет', i)) +
+    xlab('Возраст') + 
+    ylab('Объёмы стволов') + 
+    theme_bw()
+  print(plot_tmp)
+}
+rm(i, tmp, plot_tmp)
+```
+
+```{r relative_vol, include=TRUE, echo=FALSE}
+raw$rel_volume <- NA
+ref_volume <- vector(length=nrow(raw), mode='numeric')
+
+for(i in 1:nrow(raw)) {
+  if(raw[i, 'site_index'] == 'I') {
+    ref_volume[i] <- predict(models_volume[[1]], list(age=raw$age[i]))
+  } 
+    if(raw[i, 'site_index'] == 'II') {
+    ref_volume[i] <- predict(models_volume[[2]], list(age=raw$age[i]))
+  } 
+  if(raw[i, 'site_index'] == 'III') {
+    ref_volume[i] <- predict(models_volume[[3]], list(age=raw$age[i]))
+  } 
+  if(raw[i, 'site_index'] == 'IV') {
+    ref_volume[i] <- predict(models_volume[[4]], list(age=raw$age[i]))
+  } 
+  if(raw[i, 'site_index'] == 'V') {
+    ref_volume[i] <- predict(models_volume[[5]], list(age=raw$age[i]))
+  } 
+}
+rm(i)
+
+raw$rel_volume <- round(raw$volume / ref_volume, digits = 3)
+rm(ref_volume)
+
+for(i in 1:nrow(raw)) {
+  if(raw$rel_volume[i] > 1.5) raw$rel_volume[i] <- 1.5
+}
+rm(i)
+```
+
+```{r brutforce_nls_rel_vol}
+tmp <- nls2(
+  volume ~ i + a*rel_volume + b*rel_volume^d, 
+  start=data.frame(
+    i=c(-100, 10),
+    a=c(-10, 100), 
+    b=c(-100, 10), 
+    d=c(-50, 50)
+    ), 
+  data=raw, 
+  algorithm = 'brute-force'
+  )
+print(coefficients(tmp))
+rm(tmp)
+```
+
+```{r models_age_vol, include=TRUE, echo=FALSE, warning = FALSE, message = FALSE}
+model_needles_rv <- nlsLM(
+  needle_mass ~ i + a*rel_volume + b*rel_volume^d, 
+  data = raw, 
+  start=list(i=10, a=100, b=10, d=0)
+  )
+
+x <- data.frame(
+  rel_volume=seq(min(raw$rel_volume), 
+                 max(raw$rel_volume), 
+                 length.out=100)
+  )
+y <- predict(model_needles_rv, newdata = x)
+forplot <- data.frame(rel_volume=x, needle_mass=y)
+rm(x, y)
+
+ggplot(raw, aes(x=rel_volume, y=needle_mass)) + 
+  geom_point() + 
+  geom_line(data=forplot, aes(x=rel_volume, y=needle_mass), color='red') + 
+  labs(title='Зависимость массы хвои от относительного объёма') + 
+  xlab('Относительный объём') + 
+  ylab('Масса хвои') 
+
+rm(forplot)
+```
+
+```{r needle_mass_calculation, include=TRUE, echo=FALSE, warning = FALSE, message = FALSE}
+#raw$needle_mass_calc <- NA
+#raw$residuals <- NA
+
+for(i in 1:nrow(raw)) {
+  if(raw[i, 'site_index'] == 'I') {
+    raw$needle_mass_calc[i] <- predict(
+      models_needles[[1]], list(age=raw$age[i])
+      )
+  } 
+  if(raw[i, 'site_index'] == 'II') {
+    raw$needle_mass_calc[i] <- predict(
+      models_needles[[2]], list(age=raw$age[i])
+      )
+  } 
+  if(raw[i, 'site_index'] == 'III') {
+    raw$needle_mass_calc[i] <- predict(
+      models_needles[[3]], list(age=raw$age[i])
+      )
+  } 
+  if(raw[i, 'site_index'] == 'IV') {
+    raw$needle_mass_calc[i] <- predict(
+      models_needles[[4]], list(age=raw$age[i])
+      )
+  } 
+  if(raw[i, 'site_index'] == 'V') {
+    raw$needle_mass_calc[i] <- predict(
+      models_needles[[5]], list(age=raw$age[i])
+      )
+  } 
+}
+rm(i)
+
+raw$needle_mass_calc <- raw$needle_mass * raw$rel_volume
+raw$residuals <- raw$needle_mass_calc - raw$needle_mass
+
+cor.test(raw$needle_mass, raw$needle_mass_calc)
+cor.test(raw$needle_mass, raw$residuals)
+
+plot(raw$needle_mass_calc, raw$needle_mass)
+plot(raw$needle_mass, raw$residuals)
+
+summary(raw$residuals)
+```
+
+```{r linear_model, include=TRUE, echo=FALSE, warning = FALSE, message = FALSE}
+model_lm <- lm(needle_mass ~ age + volume, raw) 
+
+cor.test(raw$needle_mass, predicted(model_lm))
+cor.test(raw$needle_mass, model_lm$residuals)
+
+plot(predicted(model_lm), raw$needle_mass)
+plot(raw$needle_mass, model_lm$residuals)
+
+summary(model_lm$residuals)
+```
+
