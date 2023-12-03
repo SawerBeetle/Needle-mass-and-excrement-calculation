@@ -1,60 +1,124 @@
 ---
-title: "Defoliation and carbone balance"
+title: "Дефолиация темнохвойных пород сибирским шелкопрядом и баланс углерода"
 author: "Денис Демидко"
 date: "2023-11-16"
 output: word_document
 bibliography: references.bib
 ---
 
+# Вводная часть
+
+Основная цель расчётов -- получить динамику выделения углерода в атмосферу при разложении экскрементов и огрызков хвои в очаге сибирского шелкопряда в пихтовых и кедровых древостоях. В качестве модельной территории выступает Западный Саян (междуречье рр. Кан и Агул). Исходные данные для моделирования -- таксационные описания древостоев на территории очагов.
+
+## Моделирование массы хвои
+
+Масса хвои зависит от ряда таксационных характеристик (ТХ) древостоя. При этом ТХ взаимодействуют друг с другом сложным образом [@usolcev2001; @semechkin2005], а связь их с массой хвои нередко нелинейна [@usolcev1985]. Это привело к отсутствию консенсуса о наилучшем способе расчёта массы хвои.Из этого следует, что такой способ придётся выбирать самостоятельно.
+
+Здесь мы проверили три вида моделей. Первый построен на поиске и описании линейных и нелинейных зависимостей между массой хвои и ТХ (возраст, объём стволов, бонитет и проч.) [@usolcev2001; @semechkin2005] (далее *НЛМ*). Второй -- линейная модель, для которой мы отыскиваем наилучший набор предикторов (далее *ЛМ*). Третий, который и моделью-то не назовёшь -- использование конверсионных коэффициентов Д.Г. Замолодчикова с соавт. [@zamolodchikov2003] (далее *КК*).
+
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(include = FALSE)
+# R Markdown options setting
+knitr::opts_chunk$set(include = FALSE, echo = FALSE)
 ```
 
 ```{r clear_env}
+# clear environment before work 
 rm(list=ls())
 ```
 
+# Используемые библиотеки
+
+Для регрессионного анализа: `nls2`, `minpack.lm`, `lme4`. Для создания графиков: `ggplot2`, `cowplot`, `ggridges`. Для манипуляции данными: `tidyr`. 
+
 ```{r libraries}
+# load libraries
 library(minpack.lm)
 library(nls2)
+library(lme4)
 library(ggplot2)
+library(ggridges)
+library(cowplot)
+library(tidyr)
 ```
 
 ```{r set_wd}
+# set working directory
 setwd('C:/Users/user/YandexDisk/Важные документы/Исходные данные для статей/Слинкиной/')
 ```
 
-Данные из Усольцева
+# Поиск наилучших моделей
 
-```{r read_data, include=TRUE}
-raw <- read.csv('Масса хвои.csv', row.names = 1)[, 1:5]
+## *НЛМ*
+
+Исходными данными для моделирования массы хвои пихты послужили данные В.А. Усольцева и А.И. Антропова [@usolcev2001], кедра -- И.В. Семечкина с соавт. [@semechkin2005]. В этих работах приведены таблицы, в которых для нормальных насаждений разных возрастов и бонитетов рассчитаны массы разных фракций фитомассы, включая хвою. Такие данные позволяют рассчитать субмодели, учитывающие нелинейные связи между ТХ и массой хвои.
+
+*Запишу идею, пока помню*. Масса хвои ($m_f$) из имеющихся ТХ зависит от объёма стволов (*V*), возраста (*A*), бонитета (*si*) и полноты (*dens*):
+
+$$m_f = f(V, A, si, dens, q).$$ С бонитетом, вернее, бонитетами, просто: для каждого из них рассчитываем собственные функции. С остальными ТХ получается заковыристее.
+
+Начать надо с того, что таблицы в [@usolcev2010] рассчитаны для ступеней возрастов в нормальных насаждениях, т.е., имеющих полноту 1,0. Казалось бы, рассчитываем функцию $m_f = f(A)$ и умножаем результат её работы на *dens*. Но нет -- масса хвои от полноты зависит нелинейно и немонотонно [@usolcev1985]. И вообще полнота в таблицах, по которым ведётся подгонка моделей, отсутствует.
+
+Чтобы решить эту проблему, используем *V* как приближение *dens*. Так как, ещё раз напомню, исходными данными для построения модели служат таблицы из [@usolcev2010], сначала придётся рассчитать функцию объёма стволов для нормального насаждения $V_{norm}=f(A)$. Потом, при работе с реальными насаждениями, рассчитаем это самое приближение полноты:
+
+$$V_{rel} = V_{real} / V_{norm}.$$ А уж потом вводим нелинейную модель, описывающую функцию $m_{f, real} = f(m_{f, norm}, V_{rel})$.
+
+Подбивая итог. После создания всех моделей мы рассчитываем $m_f$ в таком порядке:
+
+1.  Массу хвои для нормального насаждения в данном возрасте: $m_{f, norm} = f(A)$;
+2.  Объём стволов для нормального насаждения в данном возрасте: $V_{norm} = f(A)$;
+3.  Приближение полноты -- относительный объём стволов: $V_{rel} = V_{real} / V_{norm}$;
+4.  Массу хвои для реального насаждения: $m_{f, real} = q*f(m_{f, norm}, V_{rel})$.
+
+*О, блин, как завернул, аж самому понравилось!*
+
+Валидацию построенных моделей проводили на данных для реальных пробных площадей из [@usolcev2010] для Алтае-Саянской горной провинции.
+
+### Пихта
+
+Данные по ТХ и массе хвои по [@usolcev2010] загрузим из локального файла `.csv`.
+
+```{r abies_read_data}
+# load raw data for model validation (Usoltsev, 2010) from .csv file
+raw_as <- read.csv('Масса хвои пихты.csv', row.names = 1)[, 1:5]
 ```
 
-Абсолютно сухая масса хвои пихтарников разных бонитетов (т/га). Данные из: Усольцев, Антропов,
+Табличные данные по фитомассе пихты из [@usolcev2001] забьём в список вручную прямо в коде. Каждый объект-фрейм в списке соответствует бонитету с I по V. Фреймы содержат данные о возрастах, объёмах стволовой древесины и абсолютно сухой массе хвои.
 
-```{r input_data, include=TRUE}
+```{r abies_input_data}
+# Create list with data about absolutely dry mass of Abies needles 
+# from (Usoltsev, Antropov, 2001) named `ua`. 
+# Each object of the list is df with age, needle mass (hereafter `mass`) 
+# and stem volume data given separately for site indices 
+# (from I to V). 
 ua <- vector(mode='list', length=5)
+names(ua) <- c('I', 'II', 'III', 'IV', 'V')
 
+# Fill the `ua` list:
+# site index I, 
 ua[[1]] <- data.frame(
   age = seq(20, 120, 10), 
   mass = c(1.6, 4.7, 7, 9.6, 9.6, 12, 11.8, 11.7, 11.4, 11, 10),
   volume = c(67, 129, 174, 246, 319, 377, 431, 485, 529, 572, 593)
   )
+# site index II, 
 ua[[2]] <- data.frame(
   age=seq(20, 120, 10), 
   mass=c(1.4, 2.8, 5.9, 8.4, 10, 10.8, 10.7, 10.1, 9.6, 9.1, 8.5),
   volume = c(54, 80, 136, 192, 248, 300, 342, 381, 419, 449, 471)
   )
+# site index III, 
 ua[[3]] <- data.frame(
   age=seq(20, 120, 10), 
   mass=c(1.1, 2.6, 4.7, 6.8, 7.9, 8.4, 8.2, 7.9, 7.4, 7, 6.3),
   volume = c(43, 66, 104, 143, 185, 224, 256, 288, 317, 342, 355)
-  )
+  ) 
+# site index IV, 
 ua[[4]] <- data.frame(
   age=seq(20, 120, 10), 
   mass=c(.8, 1.8, 3.3, 4.9, 6.1, 7, 7, 6.9, 7.1, 6.1, 5.5),
   volume = c(32, 49, 74, 105, 137, 175, 205, 229, 248, 266, 276)
-  )
+  ) 
+# site index V.
 ua[[5]] <- data.frame(
   age=seq(30, 120, 10), 
   mass=c(1.2, 2, 2.9, 3.7, 4.1, 4.1, 4.1, 3.8, 3.5, 3.2),
@@ -62,234 +126,864 @@ ua[[5]] <- data.frame(
   )
 ```
 
-Расчёт стартовых коэффициентов для модели с помощью брутфорса [@nls2].
+И объёмы стволовой древесины, и масса хвои зависят от возраста, причём нелинейно [@usolcev2001]. И ту, и другую зависимость можно описать полиномом второго порядка. Но нелинейное моделирование затруднено из-за необходимости подобрать такие стартовые значения коэффициентов, которые не позволят уйти модели в сингулярность (что бы это не означало). Рассчитаем такие стартовые коэффициенты модели с помощью брутфорса, реализованного в пакете `nls2` [@nls2]. Расчёт выполним только для первого бонитета, полученные значения универсальны.
 
-```{r brutforce_nls_age_vol, include=TRUE, echo=FALSE}
+```{r abies_brutforce_1, include=TRUE, echo=FALSE}
+# First, load brutforsed model in `tmp` object. 
+# Within the `nls2` function we specified 
 tmp <- nls2(
+  # model ('mass' is dependend variable, 'age' is predictor, 
+  # 'i', 'a', 'b' and 'd' are model coefficients), 
   mass ~ i + a*age + b*age^d, 
+  # start values (in the manually selected range), 
   start=data.frame(
     i=c(-10, 10),
     a=c(-10, 10), 
     b=c(-10, 10), 
     d=c(-5, 5)
   ), 
+  # data source (`ua` for Abies) and 
   data=ua[[1]], 
+  # algorithm. 
   algorithm = 'brute-force'
 )
-print(coefficients(tmp))
+# Show the start set of coefficients on display using 'kable' 
+# for better view in .docx report.
+knitr::kable(
+  coefficients(tmp), 
+  caption='Начальные коэффициенты для моделирования массы хвои')
+# add the empty line for readibility
 cat(' ', fill=T)
 
+# Second, rewrite the `tmp` object with model for volume and age. 
+# Within the `nls2` function we specified 
 tmp <- nls2(
+  # model ('volume' is dependend variable, 'age' is predictor, 
+  # 'i', 'a', 'b' and 'd' are model coefficients), 
   volume ~ i + a*age + b*age^d, 
+  # start values (in the manually selected range), 
   start=data.frame(
     i=c(-100, 10),
     a=c(-10, 100), 
     b=c(-100, 10), 
     d=c(-50, 50)
     ), 
+  # data source (`ua` for Abies) and 
   data=ua[[1]], 
+  # algorithm. 
   algorithm = 'brute-force'
   )
-print(coefficients(tmp))
+# Show the start set of coefficients on display using 'kable' 
+# for better view in .docx report.
+knitr::kable(
+  coefficients(tmp), 
+  caption='Начальные коэффициенты для моделирования объёма стволов')
+
+# remove the temporary object
 rm(tmp)
 ```
 
-Расчёт работающих моделей с помощью `nlsLM` [@minpack.lm]. Графики иллюстрируют качество подгонки модели к исходным данным (Усольцев, Антропов).
+Полученные на предыдущем этапе коэффициенты не позволяют получить хорошую подгонку к данным (не буду занимать место демонстрацией, поверьте на слово), но подходят как стартовые значения для реализованного в `minpack.lm` [@minpack.lm] алгоритма. Построим модели на тех же исходных данных [@usolcev2001], что использовали на предыдущем этапе.
 
-```{r models_age_vol, include=TRUE, echo=FALSE, warning = FALSE, message = FALSE}
-models_needles <- vector(mode='list', length=5)
-
+```{r abies_nls_1, include=TRUE, warning = FALSE, message = FALSE}
+# create a list for needle mass vs age models
+models_needles_as <- vector(mode='list', length=5)
+names(models_needles_as) <- c('I', 'II', 'III', 'IV', 'V')
+# Fit the needle mass vs age non-linear models for 
+# site indices from I to V:
+# within the `nlsLM` function we specified 
 for(i in 1:length(ua)){
-  models_needles[[i]] <- nlsLM(
+  models_needles_as[[i]] <- nlsLM(
+    # model ('mass' is dependend variable, 'age' is predictor, 
+    # 'i', 'a', 'b' and 'd' are model coefficients), 
     mass ~ i + a*age + b*age^d, 
+    # data source (`ua` for Abies) and 
     data = ua[[i]], 
+    # start values (from the previous step), 
     start=list(i=10, a=0, b=-10, d=-5)
   )
-  if(i != 5) {
-    tmp <- data.frame(
-      ind = seq(20, 120, 10), 
-      table = ua[[i]]$mass, 
-      predicted = predict(models_needles[[i]])
-    )
-  } else {
-    tmp <- data.frame(
-      ind = seq(30, 120, 10), 
-      table = ua[[i]]$mass, 
-      predicted = predict(models_needles[[i]])
-    )
-  }
-  plot_tmp <- ggplot(tmp, aes(x=ind, y=table)) + 
-    geom_point() + 
-    geom_point(aes(x=ind, y=predicted), colour='red') + 
-    labs(title=paste('Хвоя, бонитет', i)) +
-    xlab('Возраст') + 
-    ylab('Масса хвои') + 
-    theme_bw()
-  print(plot_tmp)
 }
+# delete loop counter
 rm(i)
 
-models_volume <- vector(mode='list', length=5)
-
+# create a list for stem volume vs age models
+models_volume_as <- vector(mode='list', length=5)
+names(models_volume_as) <- c('I', 'II', 'III', 'IV', 'V')
+# Fit the stem volume vs age non-linear models for 
+# site indices from I to V:
+# within the `nlsLM` function we specified 
 for(i in 1:length(ua)) {
-  models_volume[[i]] <- nlsLM(
+  models_volume_as[[i]] <- nlsLM(
+    # model ('volume' is dependend variable, 'age' is predictor, 
+    # 'i', 'a', 'b' and 'd' are model coefficients), 
     volume ~ i + a*age + b*age^d, 
+    # data source (`ua` for Abies) and 
     data = ua[[i]], 
+    # start values (from the previous step), 
     start=list(i=10, a=-10, b=10, d=0)
     )
-  if(i != 5) {
-    tmp <- data.frame(
-      ind = seq(20, 120, 10), 
-      table = ua[[i]]$volume, 
-      predicted = predict(models_volume[[i]])
-    )
-  } else {
-    tmp <- data.frame(
-      ind = seq(30, 120, 10), 
-      table = ua[[i]]$volume, 
-      predicted = predict(models_volume[[i]])
-    )
-  }
-  plot_tmp <- ggplot(tmp, aes(x=ind, y=table)) + 
-    geom_point() + 
-    geom_point(aes(x=ind, y=predicted), colour='red') + 
-    labs(title=paste('Объёмы стволов, бонитет', i)) +
-    xlab('Возраст') + 
-    ylab('Объёмы стволов') + 
-    theme_bw()
-  print(plot_tmp)
 }
-rm(i, tmp, plot_tmp)
-```
-
-```{r relative_vol, include=TRUE, echo=FALSE}
-raw$rel_volume <- NA
-ref_volume <- vector(length=nrow(raw), mode='numeric')
-
-for(i in 1:nrow(raw)) {
-  if(raw[i, 'site_index'] == 'I') {
-    ref_volume[i] <- predict(models_volume[[1]], list(age=raw$age[i]))
-  } 
-    if(raw[i, 'site_index'] == 'II') {
-    ref_volume[i] <- predict(models_volume[[2]], list(age=raw$age[i]))
-  } 
-  if(raw[i, 'site_index'] == 'III') {
-    ref_volume[i] <- predict(models_volume[[3]], list(age=raw$age[i]))
-  } 
-  if(raw[i, 'site_index'] == 'IV') {
-    ref_volume[i] <- predict(models_volume[[4]], list(age=raw$age[i]))
-  } 
-  if(raw[i, 'site_index'] == 'V') {
-    ref_volume[i] <- predict(models_volume[[5]], list(age=raw$age[i]))
-  } 
-}
+# delete loop counter
 rm(i)
 
-raw$rel_volume <- round(raw$volume / ref_volume, digits = 3)
+knitr::kable(
+  data.frame(
+    I = coefficients(models_needles_as$I), 
+    II = coefficients(models_needles_as$II), 
+    III = coefficients(models_needles_as$III), 
+    IV = coefficients(models_needles_as$IV), 
+    V = coefficients(models_needles_as$V) 
+    ), 
+  caption=('Коэффициенты регрессии для зависимости массы хвои от возраста')
+  )
+cat(' ', fill=T)
+knitr::kable(
+  data.frame(
+    I = coefficients(models_volume_as$I), 
+    II = coefficients(models_volume_as$II), 
+    III = coefficients(models_volume_as$III), 
+    IV = coefficients(models_volume_as$IV), 
+    V = coefficients(models_volume_as$V) 
+    ), 
+  caption=('Коэффициенты регрессии для зависимости объёма стволов от возраста')
+  )
+```
+
+```{r pred_vs_model_plot_1}
+# Create a function 'predicted_plot_1' for plotting 
+# model-based vs table data by age levels 
+# (useful both for Abies and for Pinus). 
+predicted_plot_1 <- function(
+    # Arguments are:
+    # age sequence,
+    age = seq(20, 120, 10), 
+    # table data (e.g., needle mass from Usoltsev and Antropov),
+    real, 
+    # model-calculated data (by defolt from 'predict' function), 
+    predicted, 
+    # title (string object) and 
+    title, 
+    # y-label (string object). 
+    ylab
+) {
+  # Place the functions in 'tryCatch' handler becaluse of 
+  # the mistakes in data for plotting are possible 
+  # (e.g., different length of age sequence and table data).
+  tryCatch(
+    {
+      # First, create a data frame for plotting 
+      # (age, table data, model-based data). 
+      frame <- data.frame(age, real, predicted) 
+      # Create ggplot2-based plot:
+      # in 'ggplot' create plot backbone from age and table (real) data,
+      plot <- ggplot(frame, aes(x=age, y=real)) + 
+        # add points (black colour), 
+        geom_point() + 
+        # add points for predicted values (red colour), 
+        geom_point(aes(x=age, y=predicted), colour='red') + 
+        # add title (e.g., feature name and site index),
+        labs(title = title) +
+        # add x-label,
+        xlab('Возраст') + 
+        # add y-label from argument and
+        ylab(ylab) + 
+        # set the colour theme.
+        theme_bw()
+      # output the plot to display
+      return(plot)
+    }, 
+    # If the main block of function give us some error, 
+    # suppress the error message and print brief string. 
+    error = function(e) {
+      message('Кидает error, проверяйте данные')
+    },
+    # If the main block of function give us some warning, 
+    # suppress the warning message and print brief string. 
+    warning = function(w) {
+      message('Кидает warning, проверяйте данные')
+    }
+    )
+}
+```
+
+Графически результаты моделирования выглядят так:
+
+```{r abies_plot_predicted_vs_table_vol_and_needles, include=TRUE, fig.height=15, fig.width=10}
+# Create plots for dependencies of needle mass on age by site indices:
+plot_i_needle <- predicted_plot_1(
+  # age data is by defolt, 
+  # real data taken from Usoltsev & Antropov (2001) tables, 
+  real = ua$I$mass, 
+  # predicted data are from above fitted non-linear model.
+  predicted = predict(models_needles_as$I),
+  title = 'Масса хвои, I бонитет', 
+  ylab = 'Масса хвои'
+)
+# Hereafter plots are like above both for needle mass and
+# for stem volume (with some exceptions). 
+plot_ii_needle <- predicted_plot_1(
+  real = ua$II$mass, 
+  predicted = predict(models_needles_as$II),
+  title = 'Масса хвои, II бонитет', 
+  ylab = 'Масса хвои'
+)
+plot_iii_needle <- predicted_plot_1(
+  real = ua$III$mass, 
+  predicted = predict(models_needles_as$III),
+  title = 'Масса хвои, III бонитет', 
+  ylab = 'Масса хвои'
+)
+plot_iv_needle <- predicted_plot_1(
+  real = ua$IV$mass, 
+  predicted = predict(models_needles_as$IV),
+  title = 'Масса хвои, IV бонитет', 
+  ylab = 'Масса хвои'
+)
+plot_v_needle <- predicted_plot_1(
+  # Ages here are from 30 to 120, because of Usoltsev & Antropov table 
+  # four V site index created from 30 to 120 years only. 
+  age = seq(30, 120, 10), 
+  real = ua$V$mass, 
+  predicted = predict(models_needles_as$V),
+  title = 'Масса хвои, V бонитет', 
+  ylab = 'Масса хвои'
+)
+# create plots for dependencies of stem volume on age by site indices
+plot_i_vol <- predicted_plot_1(
+  real = ua$I$volume, 
+  predicted = predict(models_volume_as$I),
+  title = 'Объём стволов, I бонитет', 
+  ylab = 'Объём стволов'
+)
+plot_ii_vol <- predicted_plot_1(
+  real = ua$II$volume, 
+  predicted = predict(models_volume_as$II),
+  title = 'Объём стволов, II бонитет', 
+  ylab = 'Объём стволов'
+)
+plot_iii_vol <- predicted_plot_1(
+  real = ua$III$volume, 
+  predicted = predict(models_volume_as$III),
+  title = 'Объём стволов, III бонитет', 
+  ylab = 'Объём стволов'
+)
+plot_iv_vol <- predicted_plot_1(
+  real = ua$IV$volume, 
+  predicted = predict(models_volume_as$IV),
+  title = 'Объём стволов, IV бонитет', 
+  ylab = 'Объём стволов'
+)
+plot_v_vol <- predicted_plot_1(
+  # Ages here are from 30 to 120, because of Usoltsev & Antropov table 
+  # four V site index created from 30 to 120 years only. 
+  age = seq(30, 120, 10), 
+  real = ua$V$volume, 
+  predicted = predict(models_volume_as$V),
+  title = 'Объём стволов, V бонитет', 
+  ylab = 'Объём стволов'
+)
+
+# create jointed plot for all dependencies
+plot_grid(
+  plot_i_needle, plot_i_vol,
+  plot_ii_needle, plot_ii_vol,
+  plot_iii_needle, plot_iii_vol,
+  plot_iv_needle, plot_iv_vol,
+  plot_v_needle, plot_v_vol,
+  ncol=2
+  )
+# remove particular plots
+rm(
+  plot_i_needle, plot_i_vol,
+  plot_ii_needle, plot_ii_vol,
+  plot_iii_needle, plot_iii_vol,
+  plot_iv_needle, plot_iv_vol,
+  plot_v_needle, plot_v_vol
+  )
+```
+
+Чёрные точки -- табличные значения из [@usolcev2001], красные -- рассчитанные построенными выше моделями. Лично я полагаю качество подгонки моделей приемлемым.
+
+Теперь можно рассчитать значения объёмов нормальных насаждений для каждого года с помощью построенной нелинейной модели. На их основе по каждому насаждению из исходных данных [@usolcev2001] получаем относительный объём (приближение полноты), поделив реальный объём на объём нормального насаждения: $V_{rel} = V_{real} / V_{norm}$.
+
+```{r abies_relative_volumes, include=TRUE, warning = FALSE, message = FALSE}
+# Here we calculate relative volumes for 'raw_as' data set 
+# (on the basis of 'models_volume_as'). 
+# First, we add in 'raw_as' an empty column, 
+raw_as$rel_volume <- NA
+# then create a vector for normal stand volumes (referent volumes). 
+ref_volume <- vector(length=nrow(raw_as), mode='numeric')
+
+# In the loop we calculate referent volumes with taking into account 
+# the site indices of given stands. 
+for(i in 1:nrow(raw_as)) {
+  if(raw_as[i, 'site_index'] == 'I') {
+    ref_volume[i] <- predict(models_volume_as$I, list(age=raw_as$age[i]))
+  } 
+    if(raw_as[i, 'site_index'] == 'II') {
+    ref_volume[i] <- predict(models_volume_as$II, list(age=raw_as$age[i]))
+  } 
+  if(raw_as[i, 'site_index'] == 'III') {
+    ref_volume[i] <- predict(models_volume_as$III, list(age=raw_as$age[i]))
+  } 
+  if(raw_as[i, 'site_index'] == 'IV') {
+    ref_volume[i] <- predict(models_volume_as$IV, list(age=raw_as$age[i]))
+  } 
+  if(raw_as[i, 'site_index'] == 'V') {
+    ref_volume[i] <- predict(models_volume_as$V, list(age=raw_as$age[i]))
+  } 
+}
+# remove the counter
+rm(i)
+
+# Calculate the relative volumes (accurate to three decimal places) and 
+raw_as$rel_volume <- round(raw_as$volume / ref_volume, digits = 3)
+# remove the temporary vector with referent volumes. 
 rm(ref_volume)
 
-for(i in 1:nrow(raw)) {
-  if(raw$rel_volume[i] > 1.5) raw$rel_volume[i] <- 1.5
-}
-rm(i)
 ```
 
-```{r brutforce_nls_rel_vol}
+Аналогично нелинейной модели выше, описывающей зависимость массы хвои от возраста, с помощью `nls2` получим стартовые значения коэффициентов для модели, описывающий зависимость массы хвои от относительного объёма.
+
+```{r abies_brutforce_2}
+# First, load brutforsed model in `tmp` object. 
+# Within the `nls2` function we specified 
 tmp <- nls2(
-  volume ~ i + a*rel_volume + b*rel_volume^d, 
+  # model ('needle_mass' is dependend variable, 'rel_volume' is predictor, 
+  # 'i', 'a', 'b' and 'd' are model coefficients), 
+  needle_mass ~ i + a*rel_volume + b*rel_volume^d, 
+  # start values (in the manually selected range), 
   start=data.frame(
     i=c(-100, 10),
     a=c(-10, 100), 
     b=c(-100, 10), 
     d=c(-50, 50)
     ), 
-  data=raw, 
+  # data source (`raw_as` for Abies) and 
+  data=raw_as, 
+  # algorithm. 
   algorithm = 'brute-force'
   )
-print(coefficients(tmp))
+# Show the start set of coefficients on display using 'kable' 
+# for better view in .docx report.
+knitr::kable(
+  coefficients(tmp), 
+  caption='Начальные коэффициенты для моделирования массы хвои')
 rm(tmp)
 ```
 
-```{r models_age_vol, include=TRUE, echo=FALSE, warning = FALSE, message = FALSE}
-model_needles_rv <- nlsLM(
+Используя стартовые значения коэффициентов, подобранные брутфорсом, построим регрессионную модель, описывающую зависимость $m_f$ от $V_{rel}$. Используем для этого пакет `minpack.lm`.
+
+```{r abies_nls_2, include=TRUE, echo=FALSE, warning = FALSE, message = FALSE, fig.height=3, fig.width=5}
+# Fit the needle mass vs relative volume non-linear models:
+# within the `nlsLM` function we specified 
+model_needles_rv_as <- nlsLM(
+  # model ('needle_mass' is dependend variable, 'rel_volume' is predictor, 
+  # 'i', 'a', 'b' and 'd' are model coefficients), 
   needle_mass ~ i + a*rel_volume + b*rel_volume^d, 
-  data = raw, 
-  start=list(i=10, a=100, b=10, d=0)
+  # data source (`raw_as` for Abies) and 
+  data = raw_as, 
+  # start values (from the previous step), 
+  start=list(i=10, a=-10, b=10, d=0)
   )
 
+# create and print the table with regression coefficients of fitted model
+knitr::kable(
+  data.frame(coefficients(model_needles_rv_as)), 
+  caption=('Коэффициенты регрессии для зависимости массы хвои от относительного объёма')
+  )
+
+# For plot function of needle mass from relative volume dependence, 
+# create the df 'x' with the sequence of relative volumes 
+# (from minimal to maximal in 'raw_as'), 
 x <- data.frame(
-  rel_volume=seq(min(raw$rel_volume), 
-                 max(raw$rel_volume), 
+  rel_volume=seq(min(raw_as$rel_volume), 
+                 max(raw_as$rel_volume), 
                  length.out=100)
   )
-y <- predict(model_needles_rv, newdata = x)
+# vector 'y' with the rel. volumes predicted by 'x', 
+y <- predict(model_needles_rv_as, newdata = x) 
+# then join 'x' and 'y' in new df (for ggplot).
 forplot <- data.frame(rel_volume=x, needle_mass=y)
+# remove temporary objects
 rm(x, y)
 
-ggplot(raw, aes(x=rel_volume, y=needle_mass)) + 
-  geom_point() + 
+# Plot the needle mass vs rel_volume function vs real data:
+# create backbone, 
+ggplot(raw_as, aes(x=rel_volume, y=needle_mass)) + 
+  # add points, 
+  geom_point() +
+  # add graph of function, 
   geom_line(data=forplot, aes(x=rel_volume, y=needle_mass), color='red') + 
+  # add title, 
   labs(title='Зависимость массы хвои от относительного объёма') + 
+  # add x-axis label, 
   xlab('Относительный объём') + 
-  ylab('Масса хвои') 
-
+  # add y-axis label and 
+  ylab('Масса хвои') + 
+  # set color theme. 
+  theme_bw()
+# remove temporary df
 rm(forplot)
 ```
 
-```{r needle_mass_calculation, include=TRUE, echo=FALSE, warning = FALSE, message = FALSE}
-#raw$needle_mass_calc <- NA
-#raw$residuals <- NA
+Теперь в два этапа рассчитаем массу хвои: сначала используем функцию $m_f(A)$, а затем скорректируем результат с помощью функции $m_f(V_{rel})$.
 
-for(i in 1:nrow(raw)) {
-  if(raw[i, 'site_index'] == 'I') {
-    raw$needle_mass_calc[i] <- predict(
-      models_needles[[1]], list(age=raw$age[i])
+```{r abies_df_for_results}
+# Before needle mass calculation, let's create the df for results. 
+# In this frame we will put not results of non-linear modelling by Usoltsev  
+# only ('nlm' for calculated values and 'nlm_resid' for residuals), but 
+# the same for linear modelling and for calculation through 
+# conversion factors (by Zamolodchikov et al.). 
+res_as <- data.frame(
+  nlm = rep(NA, nrow(raw_as)), 
+  nlm_resid = rep(NA, nrow(raw_as)), 
+  lm = rep(NA, nrow(raw_as)), 
+  lm_resid = rep(NA, nrow(raw_as)), 
+  cf = rep(NA, nrow(raw_as)), 
+  cf_resid = rep(NA, nrow(raw_as))
+)
+```
+
+```{r abies_needle_mass_vs_age_calc, warning = FALSE, message = FALSE}
+# In the loop with conditional statements calculate the non-corrected 
+# needle masses (by site indices) used models from 'models_needles_as.': 
+for(i in 1:nrow(raw_as)) {
+  # for I site index, 
+  if(raw_as[i, 'site_index'] == 'I') {
+    res_as$nlm[i] <- predict(
+      models_needles_as[[1]], list(age=raw_as$age[i])
       )
   } 
-  if(raw[i, 'site_index'] == 'II') {
-    raw$needle_mass_calc[i] <- predict(
-      models_needles[[2]], list(age=raw$age[i])
+  # for II site index, 
+  if(raw_as[i, 'site_index'] == 'II') {
+    res_as$nlm[i] <- predict(
+      models_needles_as[[2]], list(age=raw_as$age[i])
       )
   } 
-  if(raw[i, 'site_index'] == 'III') {
-    raw$needle_mass_calc[i] <- predict(
-      models_needles[[3]], list(age=raw$age[i])
+  # for III site index, 
+  if(raw_as[i, 'site_index'] == 'III') {
+    res_as$nlm[i] <- predict(
+      models_needles_as[[3]], list(age=raw_as$age[i])
       )
   } 
-  if(raw[i, 'site_index'] == 'IV') {
-    raw$needle_mass_calc[i] <- predict(
-      models_needles[[4]], list(age=raw$age[i])
+  # for IV site index and 
+  if(raw_as[i, 'site_index'] == 'IV') {
+    res_as$nlm[i] <- predict(
+      models_needles_as[[4]], list(age=raw_as$age[i])
       )
   } 
-  if(raw[i, 'site_index'] == 'V') {
-    raw$needle_mass_calc[i] <- predict(
-      models_needles[[5]], list(age=raw$age[i])
+  # for V site index. 
+  if(raw_as[i, 'site_index'] == 'V') {
+    res_as$nlm[i] <- predict(
+      models_needles_as[[5]], list(age=raw_as$age[i])
       )
   } 
 }
+# remove the counter
+rm(i)
+```
+
+```{r pred_vs_model_plot_2}
+# Create a function 'predicted_plot_2' for plotting 
+# data vector vs vector
+# (useful both for Abies and for Pinus). 
+predicted_plot_2 <- function(
+  # Arguments are:
+  # dependend variable or predictor,
+  real, 
+  # model-calculated data or residuals, 
+  predicted, 
+  # title (string object) and 
+  title, 
+  # x-label (string object), 
+  xlab,
+  # y-label (string object). 
+  ylab
+) {
+  # place the functions in 'tryCatch' handler for possible mistakes
+  tryCatch(
+    {
+      # First, create a data frame for plotting 
+      # (age, table data, model-based data). 
+      frame <- data.frame(real, predicted) 
+      # Create ggplot2-based plot:
+      # in 'ggplot' create plot backbone from age and table (real) data,
+      plot <- ggplot(frame, aes(x=real, y=predicted)) + 
+        # add points (black colour), 
+        geom_point() + 
+        # add title (e.g., feature name and site index),
+        labs(title = title) +
+        # add x-label,
+        xlab(xlab) + 
+        # add y-label from argument and
+        ylab(ylab) + 
+        # set the colour theme.
+        theme_bw()
+      # output the plot to display
+      return(plot)
+    }, 
+    # If the main block of function give us some error, 
+    # suppress the error message and print brief string. 
+    error = function(e) {
+      message('Кидает error, проверяйте данные')
+    },
+    # If the main block of function give us some warning, 
+    # suppress the warning message and print brief string. 
+    warning = function(w) {
+      message('Кидает warning, проверяйте данные')
+    }
+  )
+}
+```
+
+Результаты представлены графически ниже. Основные выводы по модели:
+
+-   оценки смещены (при низких массах хвои модель завышает результаты, при высоких -- занижает),
+-   распределение остатков гетероскедастично, по крайней мере, при визуальном анализе.
+
+```{r abies_needle_mass_vs_rel_vol_calc, include=TRUE, fig.height=7.5, fig.width=7.5}
+# Hear correct the calculated needle masses by relative volume
+# (by fitted above non-linear function) and round the results, 
+res_as$nlm <- round(
+  predict(
+    model_needles_rv_as, list(rel_volume=raw_as$rel_volume)
+    ), 
+  digits=2
+  )
+# then calculate residuals. 
+res_as$nlm_resid <- res_as$nlm - raw_as$needle_mass
+
+# Then show dependencies between predicted and real data or 
+# between variables and residuals:
+# real and model-based Abies needle masses, 
+plot_real_vs_model <- predicted_plot_2(
+  raw_as$needle_mass, 
+  res_as$nlm, 
+  'Реальные и модельные массы хвои пихты', 
+  'Реальные данные', 
+  'Данные модели'
+  )
+# real needle masses vs residuals, 
+plot_real_vs_resid <- predicted_plot_2(
+  raw_as$needle_mass, 
+  res_as$nlm_resid, 
+  'Зависимость остатков от массы хвои', 
+  'Масса хвои', 
+  'Остатки'
+  )
+# ages vs residuals, 
+plot_age_vs_resid <- predicted_plot_2(
+  raw_as$age, 
+  res_as$nlm_resid, 
+  'Реальные и модельные массы хвои пихты', 
+  'Возраст', 
+  'Остатки'
+  )
+# volumes vs residuals,
+plot_vol_vs_resid <- predicted_plot_2(
+  raw_as$volume, 
+  res_as$nlm_resid, 
+  'Реальные и модельные массы хвои пихты', 
+  'Объём стволов', 
+  'Остатки'
+  )
+# relative volumes vs residuals, 
+plot_rvol_vs_resid <- predicted_plot_2(
+  raw_as$rel_volume, 
+  res_as$nlm_resid, 
+  'Реальные и модельные массы хвои пихты', 
+  'Относительный объём стволов', 
+  'Остатки'
+  )
+# density of residuals. 
+plot_dens <- ggplot(res_as, aes(nlm_resid)) + 
+  geom_density() + 
+  geom_rug() + 
+  labs(title = 'Распределение остатков') + 
+  xlab(element_blank()) + 
+  ylab('Плотность вероятности') + 
+  theme_bw()
+
+# create jointed plot for all dependencies
+plot_grid(
+  plot_real_vs_model, plot_dens,
+  plot_real_vs_resid, plot_age_vs_resid,
+  plot_vol_vs_resid, plot_rvol_vs_resid,
+  ncol=2
+  )
+# remove particular plots
+rm(
+  plot_real_vs_model, plot_dens,
+  plot_real_vs_resid, plot_age_vs_resid,
+  plot_vol_vs_resid, plot_rvol_vs_resid
+  )
+```
+
+## *ЛМ*
+
+Модели строили на данных для реальных пробных площадей из [@usolcev2010] для Алтае-Саянской горной провинции. В качестве предикторов проверяли возраст и объём, учитывая их взаимодействие. Предварительные исследования с помощью функции `lmer` из пакета `lme4` [@lme4] показали, что бонитет на результат не влияет.
+
+### Пихта
+
+Результаты представлены графически ниже. Основные выводы по модели:
+
+-   оценки точно также смещены (при низких массах хвои модель завышает результаты, при высоких -- занижает),
+-   и их распределение также гетероскедастично,
+-   но при этом они всё же распределены компактнее (см. график плотности).
+
+```{r abies_linear_model, include=TRUE, fig.height=7.5, fig.width=7.5}
+# create linear model (take into account the interaction between predictors)
+model_needles_lm_as <- lm(needle_mass ~ age * volume, raw_as) 
+
+# Put into results df 'res_as' the predicted needle masses and
+res_as$lm <- predict(model_needles_lm_as)
+# residuals. 
+res_as$lm_resid <- res_as$lm - raw_as$needle_mass
+
+# coefficients of linear model and their characteristics
+knitr::kable(
+  data.frame(summary(model_needles_lm_as)$coefficients), 
+  caption = ('Коэффициенты линейной модели')
+  )
+
+# Then show dependencies between predicted and real data or 
+# between variables and residuals:
+# real and model-based Abies needle masses, 
+plot_real_vs_model <- predicted_plot_2(
+  raw_as$needle_mass, 
+  res_as$lm, 
+  'Реальные и модельные массы хвои пихты', 
+  'Реальные данные', 
+  'Данные модели'
+  )
+# real needle masses vs residuals, 
+plot_real_vs_resid <- predicted_plot_2(
+  raw_as$needle_mass, 
+  res_as$lm_resid, 
+  'Зависимость остатков от массы хвои', 
+  'Масса хвои', 
+  'Остатки'
+  )
+# ages vs residuals, 
+plot_age_vs_resid <- predicted_plot_2(
+  raw_as$age, 
+  res_as$lm_resid, 
+  'Реальные и модельные массы хвои пихты', 
+  'Возраст', 
+  'Остатки'
+  )
+# volumes vs residuals,
+plot_vol_vs_resid <- predicted_plot_2(
+  raw_as$volume, 
+  res_as$lm_resid, 
+  'Реальные и модельные массы хвои пихты', 
+  'Объём стволов', 
+  'Остатки'
+  )
+# relative volumes vs residuals, 
+plot_rvol_vs_resid <- predicted_plot_2(
+  raw_as$rel_volume, 
+  res_as$lm_resid, 
+  'Реальные и модельные массы хвои пихты', 
+  'Относительный объём стволов', 
+  'Остатки'
+  )
+# density of residuals.
+plot_dens <- ggplot(res_as, aes(lm_resid)) + 
+  geom_density() + 
+  geom_rug() + 
+  labs(title = 'Распределение остатков') + 
+  xlab(element_blank()) + 
+  ylab('Плотность вероятности') + 
+  theme_bw()
+
+# create jointed plot for all dependencies
+plot_grid(
+  plot_real_vs_model, plot_dens,
+  plot_real_vs_resid, plot_age_vs_resid,
+  plot_vol_vs_resid, plot_rvol_vs_resid,
+  ncol=2
+  )
+# remove particular plots
+rm(
+  plot_real_vs_model, plot_dens,
+  plot_real_vs_resid, plot_age_vs_resid,
+  plot_vol_vs_resid, plot_rvol_vs_resid
+  )
+```
+
+## *ПК*
+
+Способ для ленивых. Умножаем объём стволовой древесины на переводной коэффициент, взятый из [@zamolodchikov2003]. Проверяем по данным из [@usolcev2010].
+
+### Пихта
+
+К старым претензиям (гетероскедастичность остатков, смещённость оценок) добавляется ещё и далёкое от нормального распределение остатков.
+
+```{r abies_conversion_factor, echo=FALSE, include=TRUE, warning = FALSE, message = FALSE, fig.height=7.5, fig.width=7.5}
+# In the loop calculate the needle masses by age-related conversion factors: 
+for(i in 1:nrow(raw_as)) {
+  # create the condition for relative volumes (if rel_volume > 2, 
+  # the cf method is very imprecise), 
+  if(raw_as$rel_volume[i] > 2) {res_as$cf[i] <- NA; next}
+  # for young stands, 
+  if(raw_as$age[i] <= 40) res_as$cf[i] <- .138 * raw_as$volume[i]
+  # for middle-aged stands, 
+  if(raw_as$age[i]>40 & raw_as$age[i]<=60) res_as$cf[i] <- .047 * raw_as$volume[i]
+  # for premature stands and
+  if(raw_as$age[i]>60 & raw_as$age[i]<=80) res_as$cf[i] <- .037 * raw_as$volume[i]
+  # for mature stands.
+  if(raw_as$age[i] > 80) res_as$cf[i] <- .035 * raw_as$volume[i]
+}
+# remove counter
 rm(i)
 
-raw$needle_mass_calc <- raw$needle_mass * raw$rel_volume
-raw$residuals <- raw$needle_mass_calc - raw$needle_mass
+# calculate residuals
+res_as$cf_resid <- res_as$cf - raw_as$needle_mass
 
-cor.test(raw$needle_mass, raw$needle_mass_calc)
-cor.test(raw$needle_mass, raw$residuals)
+# Then show dependencies between predicted and real data or 
+# between variables and residuals:
+# real and model-based Abies needle masses, 
+plot_real_vs_model <- predicted_plot_2(
+  raw_as$needle_mass, 
+  res_as$cf, 
+  'Реальные и модельные массы хвои пихты', 
+  'Реальные данные', 
+  'Данные модели'
+  )
+# real needle masses vs residuals, 
+plot_real_vs_resid <- predicted_plot_2(
+  raw_as$needle_mass, 
+  res_as$cf_resid, 
+  'Зависимость остатков от массы хвои', 
+  'Масса хвои', 
+  'Остатки'
+  )
+# ages vs residuals, 
+plot_age_vs_resid <- predicted_plot_2(
+  raw_as$age, 
+  res_as$cf_resid, 
+  'Реальные и модельные массы хвои пихты', 
+  'Возраст', 
+  'Остатки'
+  )
+# volumes vs residuals,
+plot_vol_vs_resid <- predicted_plot_2(
+  raw_as$volume, 
+  res_as$cf_resid, 
+  'Реальные и модельные массы хвои пихты', 
+  'Объём стволов', 
+  'Остатки'
+  )
+# relative volumes vs residuals, 
+plot_rvol_vs_resid <- predicted_plot_2(
+  raw_as$rel_volume, 
+  res_as$cf_resid, 
+  'Реальные и модельные массы хвои пихты', 
+  'Относительный объём стволов', 
+  'Остатки'
+  )
+# density of residuals.
+plot_dens <- ggplot(res_as, aes(cf_resid)) + 
+  geom_density() + 
+  geom_rug() + 
+  labs(title = 'Распределение остатков') + 
+  xlab(element_blank()) + 
+  ylab('Плотность вероятности') + 
+  theme_bw()
 
-plot(raw$needle_mass_calc, raw$needle_mass)
-plot(raw$needle_mass, raw$residuals)
-
-summary(raw$residuals)
+# create jointed plot for all dependencies
+plot_grid(
+  plot_real_vs_model, plot_dens,
+  plot_real_vs_resid, plot_age_vs_resid,
+  plot_vol_vs_resid, plot_rvol_vs_resid,
+  ncol=2
+  )
+# remove particular plots
+rm(
+  plot_real_vs_model, plot_dens,
+  plot_real_vs_resid, plot_age_vs_resid,
+  plot_vol_vs_resid, plot_rvol_vs_resid
+  )
 ```
 
-```{r linear_model, include=TRUE, echo=FALSE, warning = FALSE, message = FALSE}
-model_lm <- lm(needle_mass ~ age + volume, raw) 
+## Резюме по выбору модели
 
-cor.test(raw$needle_mass, predicted(model_lm))
-cor.test(raw$needle_mass, model_lm$residuals)
+### Пихта
 
-plot(predicted(model_lm), raw$needle_mass)
-plot(raw$needle_mass, model_lm$residuals)
+Все три модели не слишком хороши. Сравнение статистик остатков заставляет всё же отдать предпочтение линейному моделированию.
 
-summary(model_lm$residuals)
+```{r abies_resid_comparison, include=TRUE, echo=FALSE, warning=FALSE, fig.height=5, fig.width=5}
+# create the table with basic descriptive stats for NLM, LM and CF
+knitr::kable(
+  data.frame(
+    NLM = round(as.vector(summary(res_as$nlm_resid)), digits=2)[1:6], 
+    LM = round(as.vector(summary(res_as$lm_resid)), digits=2)[1:6], 
+    CF = round(as.vector(summary(res_as$cf_resid)), digits=2)[1:6],
+    row.names = names(summary(res_as$nlm_resid))[1:6]
+  ), 
+  caption=('Описательные статистики для остатков')
+)
+
+# Add ggridges plot with the same data. First, create df, 
+forplot <- res_as[, c(2, 4, 6)]
+colnames(forplot) <- c('NLM', 'LM', 'CF')
+forplot <- pivot_longer(forplot, cols = 1:3)
+ggplot(forplot, aes(x=value, y=name, fill=factor(stat(quantile)))) + 
+  stat_density_ridges(
+    geom='density_ridges_gradient', 
+    jittered_points=T, 
+    point_shape='|', 
+    point_size=3, 
+    position = position_points_jitter(height = 0), 
+    quantile_lines=T, 
+    quantiles=c(0.05, 0.5, 0.95),
+    scale=0.9, 
+    show.legend = F
+  ) + 
+  scale_fill_manual(
+    name = "Probability", values = c("lightpink1", "gray95", "gray95", "lightblue1"),
+  ) + 
+  ylab('Метод') + 
+  xlab('Величина остатка') + 
+  theme_bw()
+rm(forplot)
 ```
 
+# Доля хвои, попавшей в опад
+
+В общем виде хвоя кормовых пород сибирского шелкопряда в его очагах делится на следующие фракции:
+
+-   несъеденная (remaining, *rem*),
+-   попавшая в опад в виде огрызков (*stub*),
+-   усвоенная гусеницами (assimilated, *assim*),
+-   то же, в виде экскрементов (excrement, *excr*).
+
+В опад (litterfall, *litt*) уходят *stub* и *excr*.
+
+Для учёта доли *rem* в общей массе хвои достаточно ввести поправочный коэффициент, и на этом я здесь вообще останавливаться не буду. Далее я исхожу из 100% дефолиации, при которой нужно распределить массу хвои между *assim*, *litterfall*.
+
+В [@kirichenko2008], приведены уравнения регрессии, описывающие зависимость массы тела гусениц от массы изъятого корма (*assim* \~ *assim* + *ecxr* + *stub*). Из коэффициентов при *x* следует, что доля усвоенного гусеницами корма (*assim*) составляет 24,3% от изъятого для пихты и 21,5% для кедра. Иначе говоря, для пихты $m_{litt} = 0,757m_f$, для кедра $m_{litt} = 0,785m_f$.
+
+На всякий случай опишу здесь ситуацию со *stub*. В обессмертившей имя Ю. Н. Баранчикова однопиське [@baranchikov1987] прямо указано, что [в природе]{.underline} гусеницы сибиряка роняют в виде огрызков 17% от *excr* вне зависимости от степени дефолиации. Результаты получены для лиственницы, но можно ввести поправку на основе данных из [@kirichenko2008] (Таблица 1). Расчёты на основании этой таблицы показывают, что хвои пихты в огрызки уходит 24,6%, а кедра -- 22,9% от *excr*. Ещё раз: это в природе. Что [@baranchikov1987], что [@kirichenko2008] показывают, что в лаборатории доля огрызков относительно экскрементов может отличаться.
+
+# Динамика разложения зоогенного опада
+
+Судьба углерода, содержащегося в изъятой шелкопрядом хвое, различается [@krasnoshchyokov2008]: "*Часть поступивших элементов усваивается растительностью, животными и микроорганизмами, часть ... выносится поверхностным жидким стоком, а часть проникает в нижние почвенные горизонты, закрепляется здесь или выносится ... за пределы этих ландшафтов*".
+
+То, что усвоено микроорганизмами -- это и есть эмиссия углерода $E_C$. Всё это улетит в атмосферу в результате дыхания. То же касается доли, усвоенной растениями: этому углероду нужно сначала попасть в атмосферу, напрямую из почвы в растения поступает ничтожная доля органики. По-хорошему, это надо учитывать отдельно, но такие расчёты сильно усложняют модель, и я предлагаю от них отказаться. В некоторой (неясно, правда, какой) степени углерод, зафиксированный травянистым ярусом, уравновешивается углеродом, ушедшим в атмосферу с разложившейся подстилкой. А подстилка разлагается если не полностью, то в значительной части: через 4--5 лет после дефолиации из 5 см остаётся 1--1,5 см, а где-то нет и этого [@krasnoshchyokov2003]. И этот процесс следовало бы включить в модель, но без дополнительных экспериментов это невозможно.
+
+Доля углерода, вынесенная с поверхностным стоком, известна из [@krasnoshchyokov2003; @krasnoshchyokov2008]. Её также не следует включать в эмиссию. Скорее всего, она депонируется в почве [@krasnoshchyokov2003] за пределами того участка, где она попала в воду, а если какая-то часть углерода и попадёт в атмосферу, то неизвестно, какая именно. Вынос углерода в водорастворимой форме составляет 3,7% [@krasnoshchyokov2008]. Для простоты считаем, что это значение не меняется на протяжении всего времени разложения зоогенного опада (ЗО).
+
+В почве в пределах этого же участка депонируется часть растворённого углерода [@krasnoshchyokov2003] и, в форме копролитов, основная масса того, что усвоили животные. Но оценить её проблемно: данные о вкладе почвенных беспозвоночных в разложение ЗО отсутствуют. Ближе всего по свойствам к зоогенному опаду, очевидно, хвоя, но именно по хвое пихте и кедра таких данных, опять же, нет. В качестве грубого приближения можно использовать усреднённые данные о вкладе почвенной фауны в разложение хвои других хвойных. Эта величина составляет 23,8% [@bezkorovaynaya2011]. Это значение также считаем постоянным. *Ну, да, грубое упрощение. А куда деваться при условии отсутствия нормальных экспериментальных данных?* В сумме же имеем 27,5% углерода, который так или иначе депонируется.
+
+Разложение зоогенного опада в очагах сибиряка завершается на втором году после дефолиации. Маркером этого служит снижение различий почти до нуля по скорости разложения целлюлозы между экспериментальными участками, куда вносились экскременты, и контрольными, через 14 месяцев (т.е., как раз на второй год после внесения опада) [@krasnoshchyokov2003]. Это же прямым текстом указано в цитируемой работе: "*...период действия экскрементов гусениц сибирского шелкопряда на почвенную микрофлору ... составляет два, максимум три вегетационных сезона*".
+
+В эксперименте, описанном в [@krasnoshchyokov2003; @krasnoshchyokov2008], в середине лета было внесено 450 г экскрементов на $м^{2}$ почвы, что составило 2092 кг углерода $га^{-1}$ (переводной коэффициент массы ЗО в углерод равен 0,465). Уже весной следующего года от внесённого углерода осталось 437 кг $га^{-1}$. Это соответствует 940 кг зоогенного опада $га^{-1}$ или 20,9% от исходной массы. Разумно предположить (опять же, несколько упрощая), что к началу следующего (третьего по счёту) вегетационного периода сохранится такая же доля от исходной массы, то есть, 196 кг опада $га^{-1}$. К концу сезона это количество разложится полностью (см. выше).
+
+В итоге после учёта всех допущений имеем в самом простом виде такую формулу расчёта эмиссии углерода по массе ЗО:
+
+$$E_C = 0,465 * (m_{litt} - 0,275 * m_{litt}) = 0,337 * m_{litt}.$$ При этом в сезон дефолиации разлагается 79,1% от исходной массы $m_{litt}$, на следующий год 16,5%, а на второй год после дефолиации завершается разложение оставшихся 4,4%.
+
+# Использованные источники
