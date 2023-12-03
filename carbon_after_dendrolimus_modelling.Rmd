@@ -928,26 +928,42 @@ knitr::kable(
 
 # Add ggridges plot with the same data. First, create df, 
 forplot <- res_as[, c(2, 4, 6)]
-colnames(forplot) <- c('NLM', 'LM', 'CF')
+# give the appropriate names of columns and 
+colnames(forplot) <- c('NLM', 'LM', 'CF') 
+# make the long form of data frame. 
 forplot <- pivot_longer(forplot, cols = 1:3)
+# Now create a ggridge plot. First, the backbone.
 ggplot(forplot, aes(x=value, y=name, fill=factor(stat(quantile)))) + 
+  # Second, the geom with coloured tales:
   stat_density_ridges(
+    # add the geom, 
     geom='density_ridges_gradient', 
+    # add the data points and 
     jittered_points=T, 
+    # give them the rug shape (vertical line), 
     point_shape='|', 
+    # choose the size of points, 
     point_size=3, 
+    # put the points to y-axis, 
     position = position_points_jitter(height = 0), 
+    # add the quantile lines (median and 5%), 
     quantile_lines=T, 
     quantiles=c(0.05, 0.5, 0.95),
+    # choose the size of density polygons (to avoid the overlap) and 
     scale=0.9, 
+    # suppress legend. 
     show.legend = F
   ) + 
+  # choose the colour of tails
   scale_fill_manual(
     name = "Probability", values = c("lightpink1", "gray95", "gray95", "lightblue1"),
   ) + 
+  # give the axes names
   ylab('Метод') + 
   xlab('Величина остатка') + 
+  # choose the colour theme
   theme_bw()
+# remove the temporary df
 rm(forplot)
 ```
 
