@@ -28,10 +28,11 @@ rm(list=ls())
 
 # Используемые библиотеки
 
-Для регрессионного анализа: `nls2`, `minpack.lm`, `lme4`. Для создания графиков: `ggplot2`, `cowplot`, `ggridges`. Для манипуляции данными: `tidyr`. 
+Для регрессионного анализа: `nls2`, `minpack.lm`, `lme4`. Для создания графиков: `ggplot2`, `cowplot`, `ggridges`. Для манипуляции данными: `readxl`, `tidyr`. 
 
 ```{r libraries}
 # load libraries
+library(readxl)
 library(minpack.lm)
 library(nls2)
 library(lme4)
@@ -77,9 +78,9 @@ $$V_{rel} = V_{real} / V_{norm}.$$ А уж потом вводим нелине�
 
 Данные по ТХ и массе хвои по [@usolcev2010] загрузим из локального файла `.csv`.
 
-```{r abies_read_data}
+```{r abies_read_data, warning=FALSE, message=FALSE}
 # load raw data for model validation (Usoltsev, 2010) from .csv file
-raw_as <- read.csv('Масса хвои пихты.csv', row.names = 1)[, 1:5]
+raw_as <- read_excel('Масса хвои пихты.xlsx')[, 2:6]
 ```
 
 Табличные данные по фитомассе пихты из [@usolcev2001] забьём в список вручную прямо в коде. Каждый объект-фрейм в списке соответствует бонитету с I по V. Фреймы содержат данные о возрастах, объёмах стволовой древесины и абсолютно сухой массе хвои.
@@ -676,7 +677,7 @@ plot_real_vs_resid <- predicted_plot_2(
 plot_age_vs_resid <- predicted_plot_2(
   raw_as$age, 
   res_as$nlm_resid, 
-  'Реальные и модельные массы хвои пихты', 
+  'Зависимость остатков от возраста', 
   'Возраст', 
   'Остатки'
   )
@@ -684,7 +685,7 @@ plot_age_vs_resid <- predicted_plot_2(
 plot_vol_vs_resid <- predicted_plot_2(
   raw_as$volume, 
   res_as$nlm_resid, 
-  'Реальные и модельные массы хвои пихты', 
+  'Зависимость остатков от объёма стволов', 
   'Объём стволов', 
   'Остатки'
   )
@@ -692,7 +693,7 @@ plot_vol_vs_resid <- predicted_plot_2(
 plot_rvol_vs_resid <- predicted_plot_2(
   raw_as$rel_volume, 
   res_as$nlm_resid, 
-  'Реальные и модельные массы хвои пихты', 
+  'Зависимость остатков от отн. объёма стволов', 
   'Относительный объём стволов', 
   'Остатки'
   )
@@ -719,6 +720,18 @@ rm(
   plot_vol_vs_resid, plot_rvol_vs_resid
   )
 ```
+
+### Кедр
+
+Данные по ТХ и массе хвои по [@usolcev2010] для южной тайги Алтае-Саянской горной провинции загрузим из локального файла `.csv`.
+
+```{r psib_read_data, warning=FALSE, message=FALSE}
+# load raw data for model validation (Usoltsev, 2010) from .csv file
+raw_ps <- read_excel('Масса хвои кедра.xlsx')[, 2:6]
+raw_ps <- raw_ps[-4, ]
+```
+
+Не буду я нелинейную модель рассчитывать, лень. Пихта показала (ниже), что головной боли много, а толку мало. Здесь ограничимся загрузкой данных.
 
 ## *ЛМ*
 
@@ -769,7 +782,7 @@ plot_real_vs_resid <- predicted_plot_2(
 plot_age_vs_resid <- predicted_plot_2(
   raw_as$age, 
   res_as$lm_resid, 
-  'Реальные и модельные массы хвои пихты', 
+  'Зависимость остатков от возраста', 
   'Возраст', 
   'Остатки'
   )
@@ -777,7 +790,7 @@ plot_age_vs_resid <- predicted_plot_2(
 plot_vol_vs_resid <- predicted_plot_2(
   raw_as$volume, 
   res_as$lm_resid, 
-  'Реальные и модельные массы хвои пихты', 
+  'Зависимость остатков от объёма стволов', 
   'Объём стволов', 
   'Остатки'
   )
@@ -785,7 +798,7 @@ plot_vol_vs_resid <- predicted_plot_2(
 plot_rvol_vs_resid <- predicted_plot_2(
   raw_as$rel_volume, 
   res_as$lm_resid, 
-  'Реальные и модельные массы хвои пихты', 
+  'Зависимость остатков от отн. объёма стволов', 
   'Относительный объём стволов', 
   'Остатки'
   )
@@ -813,13 +826,107 @@ rm(
   )
 ```
 
+### Кедр
+
+Результаты безрадостные: 
+
+- смещение результатов (завышение низких, занижение высоких); 
+- хвост влево.
+
+Правда, гетероскедастичность не диагностируется, по крайней мере, на глаз. 
+
+```{r psib_df_for_results}
+# Before needle mass calculation, let's create the df for results. 
+# In this frame we will put results of linear modelling and or 
+# calculation through conversion factors (by Zamolodchikov et al.). 
+res_ps <- data.frame(
+  lm = rep(NA, nrow(raw_ps)), 
+  lm_resid = rep(NA, nrow(raw_ps)), 
+  cf = rep(NA, nrow(raw_ps)), 
+  cf_resid = rep(NA, nrow(raw_ps))
+)
+```
+
+```{r psib_linear_model, include=TRUE, fig.height=7.5, fig.width=7.5}
+# create linear model (take into account the interaction between predictors)
+model_needles_lm_ps <- lm(needle_mass ~ age * volume, raw_ps) 
+
+# Put into results df 'res_as' the predicted needle masses and
+res_ps$lm <- predict(model_needles_lm_ps)
+# residuals. 
+res_ps$lm_resid <- res_ps$lm - raw_ps$needle_mass
+
+# coefficients of linear model and their characteristics
+knitr::kable(
+  data.frame(summary(model_needles_lm_ps)$coefficients), 
+  caption = ('Коэффициенты линейной модели')
+  )
+
+# Then show dependencies between predicted and real data or 
+# between variables and residuals:
+# real and model-based Abies needle masses, 
+plot_real_vs_model <- predicted_plot_2(
+  raw_ps$needle_mass, 
+  res_ps$lm, 
+  'Реальные и модельные массы хвои кедра', 
+  'Реальные данные', 
+  'Данные модели'
+  )
+# real needle masses vs residuals, 
+plot_real_vs_resid <- predicted_plot_2(
+  raw_ps$needle_mass, 
+  res_ps$lm_resid, 
+  'Зависимость остатков от массы хвои', 
+  'Масса хвои', 
+  'Остатки'
+  )
+# ages vs residuals, 
+plot_age_vs_resid <- predicted_plot_2(
+  raw_ps$age, 
+  res_ps$lm_resid, 
+  'Зависимость остатков от возраста', 
+  'Возраст', 
+  'Остатки'
+  )
+# volumes vs residuals,
+plot_vol_vs_resid <- predicted_plot_2(
+  raw_ps$volume, 
+  res_ps$lm_resid, 
+  'Зависимость остатков от объёма стволов', 
+  'Объём стволов', 
+  'Остатки'
+  )
+# density of residuals.
+plot_dens <- ggplot(res_ps, aes(lm_resid)) + 
+  geom_density() + 
+  geom_rug() + 
+  labs(title = 'Распределение остатков') + 
+  xlab(element_blank()) + 
+  ylab('Плотность вероятности') + 
+  theme_bw()
+
+# create jointed plot for all dependencies
+plot_grid(
+  plot_real_vs_model, plot_dens,
+  plot_real_vs_resid, plot_age_vs_resid,
+  plot_vol_vs_resid,
+  ncol=2
+)
+# remove particular plots
+rm(
+  plot_real_vs_model, plot_dens,
+  plot_real_vs_resid, plot_age_vs_resid,
+  plot_vol_vs_resid
+)
+```
+
 ## *ПК*
 
 Способ для ленивых. Умножаем объём стволовой древесины на переводной коэффициент, взятый из [@zamolodchikov2003]. Проверяем по данным из [@usolcev2010].
 
 ### Пихта
 
-К старым претензиям (гетероскедастичность остатков, смещённость оценок) добавляется ещё и далёкое от нормального распределение остатков.
+К старым претензиям (гетероскедастичность остатков, смещённость оценок) добавляется ещё и далёкое от нормального распределение остатков (длинный хвост вправо).
 
 ```{r abies_conversion_factor, echo=FALSE, include=TRUE, warning = FALSE, message = FALSE, fig.height=7.5, fig.width=7.5}
 # In the loop calculate the needle masses by age-related conversion factors: 
@@ -864,7 +971,7 @@ plot_real_vs_resid <- predicted_plot_2(
 plot_age_vs_resid <- predicted_plot_2(
   raw_as$age, 
   res_as$cf_resid, 
-  'Реальные и модельные массы хвои пихты', 
+  'Зависимость остатков от возраста', 
   'Возраст', 
   'Остатки'
   )
@@ -872,7 +979,7 @@ plot_age_vs_resid <- predicted_plot_2(
 plot_vol_vs_resid <- predicted_plot_2(
   raw_as$volume, 
   res_as$cf_resid, 
-  'Реальные и модельные массы хвои пихты', 
+  'Зависимость остатков от объёма стволов', 
   'Объём стволов', 
   'Остатки'
   )
@@ -880,12 +987,100 @@ plot_vol_vs_resid <- predicted_plot_2(
 plot_rvol_vs_resid <- predicted_plot_2(
   raw_as$rel_volume, 
   res_as$cf_resid, 
-  'Реальные и модельные массы хвои пихты', 
+  'Зависимость остатков от отн. объёма стволов', 
   'Относительный объём стволов', 
   'Остатки'
   )
 # density of residuals.
 plot_dens <- ggplot(res_as, aes(cf_resid)) + 
+  geom_density() + 
+  geom_rug() + 
+  labs(title = 'Распределение остатков') + 
+  xlab(element_blank()) + 
+  ylab('Плотность вероятности') + 
+  theme_bw()
+
+# create jointed plot for all dependencies
+plot_grid(
+  plot_real_vs_model, plot_dens,
+  plot_real_vs_resid, plot_age_vs_resid,
+  plot_vol_vs_resid, plot_rvol_vs_resid,
+  ncol=2
+  )
+# remove particular plots
+rm(
+  plot_real_vs_model, plot_dens,
+  plot_real_vs_resid, plot_age_vs_resid,
+  plot_vol_vs_resid, plot_rvol_vs_resid
+  )
+```
+
+### Кедр
+
+Пробы ставить негде. Завышение не то, что в разы – на порядки. 
+
+```{r psib_conversion_factor, echo=FALSE, include=TRUE, warning = FALSE, message = FALSE, fig.height=7.5, fig.width=7.5}
+# In the loop calculate the needle masses by age-related conversion factors: 
+for(i in 1:nrow(raw_ps)) {
+  # for young stands, 
+  if(raw_ps$age[i] <= 80) res_ps$cf[i] <- .068 * raw_ps$volume[i]
+  # for middle-aged stands, 
+  if(raw_ps$age[i]>80 & raw_ps$age[i]<=120) res_ps$cf[i] <- .027 * raw_ps$volume[i]
+  # for premature stands and
+  if(raw_ps$age[i]>120 & raw_ps$age[i]<=160) res_ps$cf[i] <- .027 * raw_ps$volume[i]
+  # for mature stands.
+  if(raw_ps$age[i] > 160) res_ps$cf[i] <- .045 * raw_ps$volume[i]
+}
+# remove counter
+rm(i)
+
+# calculate residuals
+res_ps$cf_resid <- res_ps$cf - raw_ps$needle_mass
+
+# Then show dependencies between predicted and real data or 
+# between variables and residuals:
+# real and model-based Abies needle masses, 
+plot_real_vs_model <- predicted_plot_2(
+  raw_ps$needle_mass, 
+  res_ps$cf, 
+  'Реальные и модельные массы хвои кедра', 
+  'Реальные данные', 
+  'Данные модели'
+  )
+# real needle masses vs residuals, 
+plot_real_vs_resid <- predicted_plot_2(
+  raw_ps$needle_mass, 
+  res_ps$cf_resid, 
+  'Зависимость остатков от массы хвои', 
+  'Масса хвои', 
+  'Остатки'
+  )
+# ages vs residuals, 
+plot_age_vs_resid <- predicted_plot_2(
+  raw_ps$age, 
+  res_ps$cf_resid, 
+  'Зависимость остатков от возраста', 
+  'Возраст', 
+  'Остатки'
+  )
+# volumes vs residuals,
+plot_vol_vs_resid <- predicted_plot_2(
+  raw_ps$volume, 
+  res_ps$cf_resid, 
+  'Зависимость остатков от объёма стволов', 
+  'Объём стволов', 
+  'Остатки'
+  )
+# relative volumes vs residuals, 
+plot_rvol_vs_resid <- predicted_plot_2(
+  raw_ps$rel_volume, 
+  res_ps$cf_resid, 
+  'Зависимость остатков от отн. объёма стволов', 
+  'Относительный объём стволов', 
+  'Остатки'
+  )
+# density of residuals.
+plot_dens <- ggplot(res_ps, aes(cf_resid)) + 
   geom_density() + 
   geom_rug() + 
   labs(title = 'Распределение остатков') + 
@@ -967,6 +1162,62 @@ ggplot(forplot, aes(x=value, y=name, fill=factor(stat(quantile)))) +
 rm(forplot)
 ```
 
+### Кедр 
+
+Однозначно линейная модель. 
+
+```{r psib_resid_comparison, include=TRUE, echo=FALSE, warning=FALSE, fig.height=3.7, fig.width=5}
+# create the table with basic descriptive stats for LM and CF
+knitr::kable(
+  data.frame(
+    LM = round(as.vector(summary(res_ps$lm_resid)), digits=2)[1:6], 
+    CF = round(as.vector(summary(res_ps$cf_resid)), digits=2)[1:6],
+    row.names = names(summary(res_ps$lm_resid))[1:6]
+  ), 
+  caption=('Описательные статистики для остатков')
+)
+
+# Add ggridges plot with the same data. First, create df, 
+forplot <- res_ps[, c(2, 4)]
+# give the appropriate names of columns and 
+colnames(forplot) <- c('LM', 'CF') 
+# make the long form of data frame. 
+forplot <- pivot_longer(forplot, cols = 1:2)
+# Now create a ggridge plot. First, the backbone.
+ggplot(forplot, aes(x=value, y=name, fill=factor(stat(quantile)))) + 
+  # Second, the geom with coloured tales:
+  stat_density_ridges(
+    # add the geom, 
+    geom='density_ridges_gradient', 
+    # add the data points and 
+    jittered_points=T, 
+    # give them the rug shape (vertical line), 
+    point_shape='|', 
+    # choose the size of points, 
+    point_size=3, 
+    # put the points to y-axis, 
+    position = position_points_jitter(height = 0), 
+    # add the quantile lines (median and 5%), 
+    quantile_lines=T, 
+    quantiles=c(0.05, 0.5, 0.95),
+    # choose the size of density polygons (to avoid the overlap) and 
+    scale=0.55, 
+    # suppress legend. 
+    show.legend = F
+  ) + 
+  # choose the colour of tails
+  scale_fill_manual(
+    name = "Probability", values = c("lightpink1", "gray95", "gray95", "lightblue1"),
+  ) + 
+  # give the axes names
+  ylab('Метод') + 
+  xlab('Величина остатка') + 
+  # choose the colour theme
+  theme_bw()
+# remove the temporary df
+rm(forplot)
+```
+
 # Доля хвои, попавшей в опад
 
 В общем виде хвоя кормовых пород сибирского шелкопряда в его очагах делится на следующие фракции:
@@ -1001,5 +1252,55 @@ rm(forplot)
 В итоге после учёта всех допущений имеем в самом простом виде такую формулу расчёта эмиссии углерода по массе ЗО:
 
 $$E_C = 0,465 * (m_{litt} - 0,275 * m_{litt}) = 0,337 * m_{litt}.$$ При этом в сезон дефолиации разлагается 79,1% от исходной массы $m_{litt}$, на следующий год 16,5%, а на второй год после дефолиации завершается разложение оставшихся 4,4%.
+
+# Главная всеконечная формула
+
+Забегая вперёд: одной формулы не получится, даже для одной породы. Общая последовательность такая: 
+
+1. Рассчитываем массу хвои на гектар древостоя. Или с помощью линейной формулы, или используя переходные коэффициенты – сама решай. 
+2. Массу хвои умножаем на степень дефолиации, чтобы узнать, сколько хвои было изъято. 
+3. Эту массу умножаем на зависящий от породы коэффициент, чтобы получить массу зоогенного опада. 
+4. Массу зоогенного опада умножаем на переводной коэффициент 0,337, чтобы получить массу эмитированного из него углерода. 
+5. Разбиваем эмиссию по годам: в первый год (год дефолиации) она составляет 79,1% от общей, во второй 16,5%, в третий 4,4%. 
+
+## Пихта
+
+Рассчитываем массу хвои или с помощью линейной регрессии: 
+
+$$m_f = 1.046 - 0.00167A + 0.0478V - 0.000214AV,$$
+
+или используя переходные коэффициенты: 
+$$A \le 40 ⇒ m_f = 0.138V,$$
+$$A > 40 \cap A \le 60 ⇒ m_f = 0.047V,$$
+$$A > 60 \cap A \le 80 ⇒ m_f = 0.037V,$$
+$$A > 80 ⇒ m_f = 0.035V.$$
+
+Теперь умножаем $m_f$ на степень дефолиации (в долях единицы) и два объединённых переводных коэффициента. Так мы получим массу эмитированного из хвои углерода из $m_f$, минуя промежуточные этапы расчёта массы изъятой хвои и зоогенного опада: 
+
+$$E_C = defol * 0.255m_f$$
+
+## Кедр
+
+Рассчитываем массу хвои или с помощью линейной регрессии: 
+
+$$m_f = 1.268 + 0.0518A - 0.0034V - 0.000052AV,$$
+
+или используя переходные коэффициенты: 
+$$A \le 80 ⇒ m_f = 0.068V,$$
+$$A > 80 \cap A \le 120 ⇒ m_f = 0.027,$$
+$$A > 120 \cap A \le 160 ⇒ m_f = 0.027V,$$
+$$A > 160 ⇒ m_f = 0.045V.$$
+
+Теперь умножаем $m_f$ на степень дефолиации (в долях единицы) и два объединённых переводных коэффициента. Так мы получим массу эмитированного из хвои углерода из $m_f$, минуя промежуточные этапы расчёта массы изъятой хвои и зоогенного опада: 
+
+$$E_C = defol * 0.264m_f$$
+
+## Распределение эмиссии углерода из хвои по сезонам
+
+Теперь раскидаем $E_C$ по сезонам ($E_{C1}$ – сезон дефолиации и т.д.): 
+
+$$E_{C1} = 0.791E_C$$
+$$E_{C2} = 0.165E_C$$
+$$E_{C3} = 0.044E_C$$
 
 # Использованные источники
